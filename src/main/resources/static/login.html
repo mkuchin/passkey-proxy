@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passkey Login</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f5f5;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    padding: 2.5rem 2rem;
+    width: 100%;
+    max-width: 380px;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #111; }
+  label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 0.25rem; }
+  input[type=text] {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type=text]:focus { border-color: #4f46e5; }
+  button {
+    width: 100%;
+    padding: 0.75rem;
+    background: #4f46e5;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  button:hover { background: #4338ca; }
+  button:disabled { background: #a5a0f0; cursor: not-allowed; }
+  .msg { margin-top: 1rem; padding: 0.75rem; border-radius: 8px; font-size: 0.9rem; display: none; }
+  .msg.error { background: #fee2e2; color: #b91c1c; display: block; }
+  .msg.success { background: #d1fae5; color: #065f46; display: block; }
+  .links { margin-top: 1.25rem; text-align: center; font-size: 0.85rem; color: #666; }
+  .links a { color: #4f46e5; text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔑 Sign in</h1>
+  <label for="username">Username</label>
+  <input type="text" id="username" autocomplete="username webauthn" placeholder="alice" autofocus>
+  <button id="loginBtn" onclick="login()">Sign in with passkey</button>
+  <div id="msg" class="msg"></div>
+  <div class="links">
+    <a href="/webauthn/register">Register a new passkey</a>
+  </div>
+</div>
+
+<script>
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function b64url(bytes) {
+    return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+  function fromB64url(str) {
+    const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  }
+  function showError(msg) {
+    const el = document.getElementById('msg');
+    el.className = 'msg error';
+    el.textContent = msg;
+  }
+  function showSuccess(msg) {
+    const el = document.getElementById('msg');
+    el.className = 'msg success';
+    el.textContent = msg;
+  }
+
+  // Pre-fill username from cookie
+  (function() {
+    const name = document.cookie.split('; ').find(r => r.startsWith('webauthn-proxy-username='));
+    if (name) document.getElementById('username').value = name.split('=')[1];
+    // Also check query param
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('username')) document.getElementById('username').value = params.get('username');
+  })();
+
+  // Submit on Enter
+  document.getElementById('username').addEventListener('keydown', e => {
+    if (e.key === 'Enter') login();
+  });
+
+  async function login() {
+    const username = document.getElementById('username').value.trim();
+    if (!username) { showError('Enter your username'); return; }
+
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.textContent = 'Waiting for passkey…';
+
+    try {
+      // Step 1 – get assertion options from server
+      const optRes = await fetch(
+        '/webauthn/login/get_credential_request_options?username=' + encodeURIComponent(username));
+      const optData = await optRes.json();
+      if (!optRes.ok) { showError(optData.message || 'Login failed'); return; }
+
+      const options = optData.publicKey;
+      options.challenge = fromB64url(options.challenge);
+      if (options.allowCredentials) {
+        options.allowCredentials = options.allowCredentials.map(c => ({
+          ...c, id: fromB64url(c.id)
+        }));
+      }
+
+      // Step 2 – get assertion from browser
+      const assertion = await navigator.credentials.get({ publicKey: options });
+
+      // Step 3 – send assertion to server
+      const payload = {
+        id:    assertion.id,
+        rawId: b64url(assertion.rawId),
+        response: {
+          clientDataJSON:    b64url(assertion.response.clientDataJSON),
+          authenticatorData: b64url(assertion.response.authenticatorData),
+          signature:         b64url(assertion.response.signature),
+          userHandle: assertion.response.userHandle
+            ? b64url(assertion.response.userHandle) : null,
+        },
+        type: assertion.type,
+      };
+
+      const loginRes = await fetch(
+        '/webauthn/login/process_login_assertion?username=' + encodeURIComponent(username), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      const loginData = await loginRes.json();
+
+      if (loginRes.ok) {
+        showSuccess('Authenticated! Redirecting…');
+        const params = new URLSearchParams(window.location.search);
+        const dest = params.get('redirect_url') || '/webauthn/static/authenticated.html';
+        setTimeout(() => window.location.href = dest, 500);
+      } else {
+        showError(loginData.message || 'Login failed');
+      }
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        showError('Passkey prompt was dismissed or timed out.');
+      } else {
+        showError('Error: ' + err.message);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign in with passkey';
+    }
+  }
+</script>
+</body>
+</html>

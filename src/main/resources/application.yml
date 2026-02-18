@@ -1,0 +1,20 @@
+spring:
+  mvc:
+    static-path-pattern: /webauthn/static/**
+  web:
+    resources:
+      static-locations: classpath:/static/
+  servlet:
+    session:
+      timeout: ${SESSION_HARD_TIMEOUT:86400}s
+
+server:
+  port: ${SERVER_PORT:8080}
+  address: ${SERVER_ADDRESS:0.0.0.0}
+
+proxy:
+  config-path: ${PROXY_CONFIG_PATH:./config}
+
+logging:
+  level:
+    com.example.passkeyproxy: INFO

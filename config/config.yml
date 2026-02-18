@@ -1,0 +1,41 @@
+# Passkey Proxy Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Relying Party settings — must match your domain exactly.
+rpDisplayName: MyCompany
+rpId: localhost
+
+# Optional: restrict allowed origins. If empty, any origin is accepted (dynamic mode).
+# rpOrigins:
+#   - https://example.com
+
+# Test mode: newly registered users are immediately activated without admin approval.
+# WARNING — enables self-registration. DO NOT use in production.
+testMode: false
+
+# Session timeouts (in seconds).
+# Soft timeout: inactivity limit (resets on each /auth check).
+# Hard timeout: absolute maximum session length from time of login.
+sessionSoftTimeoutSeconds: 28800    # 8 hours
+sessionHardTimeoutSeconds: 86400    # 24 hours
+
+# Cookie settings
+sessionCookieName: webauthn-proxy-session
+userCookieName: webauthn-proxy-username
+
+# Username validation regex (default: any non-empty string)
+usernameRegex: "^[a-zA-Z0-9._@-]+$"
+
+# Set to true when serving over HTTPS
+cookieSecure: false
+
+# Set to your apex domain to share session across subdomains, e.g. ".example.com"
+cookieDomain: ""
+
+# Optional CIDR network groups for the /webauthn/verify 2FA endpoint.
+# Allows matching IPs that belong to the same network even if not identical.
+# cidrNetworks:
+#   office:
+#     - "10.0.0.0/8"
+#   vpn:
+#     - "172.16.0.0/12"
