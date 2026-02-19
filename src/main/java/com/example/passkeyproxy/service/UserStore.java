@@ -6,8 +6,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
 
+import java.io.FileWriter;
+import java.nio.file.Path;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,6 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class UserStore {
 
     private static final Logger log = LoggerFactory.getLogger(UserStore.class);
+
+    @Value("${proxy.config-path:./config}")
+    private String configPath;
 
     private final CredentialsFileConfig credentialsFileConfig;
     private final ObjectMapper objectMapper;
@@ -104,7 +114,7 @@ public class UserStore {
      * registrant (to prevent sharing credentials across accounts).
      */
     public boolean isCredentialIdTaken(byte[] credentialId) {
-        String b64 = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(credentialId);
+        String b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(credentialId);
         for (StoredUser u : users.values()) {
             if (u.getCredentials().stream().anyMatch(c -> b64.equals(c.getCredentialId()))) {
                 return true;
@@ -116,5 +126,44 @@ public class UserStore {
             }
         }
         return false;
+    }
+
+    /**
+     * Finds a persisted user by credential ID (for usernameless/discoverable-credential login).
+     */
+    public StoredUser findUserByCredentialId(byte[] credentialId) {
+        String b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(credentialId);
+        return users.values().stream()
+                .filter(u -> u.getCredentials().stream().anyMatch(c -> b64.equals(c.getCredentialId())))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Persists a user to credentials.yml and activates them in the in-memory store.
+     * Replaces the manual admin-approval workflow.
+     */
+    public void persistUser(String username, StoredUser user) throws Exception {
+        users.put(username, user);
+        registrations.remove(username);
+
+        // Serialize all current users and write to credentials.yml
+        Map<String, String> serializedUsers = new LinkedHashMap<>();
+        for (Map.Entry<String, StoredUser> entry : users.entrySet()) {
+            serializedUsers.put(entry.getKey(), objectMapper.writeValueAsString(entry.getValue()));
+        }
+
+        Map<String, Object> rawConfig = new LinkedHashMap<>();
+        rawConfig.put("users", serializedUsers);
+
+        DumperOptions opts = new DumperOptions();
+        opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+        Yaml yaml = new Yaml(opts);
+
+        Path credFile = Path.of(configPath, "credentials.yml");
+        try (FileWriter writer = new FileWriter(credFile.toFile())) {
+            yaml.dump(rawConfig, writer);
+        }
+        log.info("Persisted user {} to credentials.yml", username);
     }
 }

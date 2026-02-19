@@ -158,28 +158,34 @@ public class WebAuthnController {
     /**
      * GET /webauthn/login/get_credential_request_options
      * Step 1 of login: returns PublicKeyCredentialRequestOptions JSON.
+     * If {@code username} is omitted, uses an empty allowCredentials list for
+     * usernameless/discoverable-credential login.
      */
     @GetMapping("/webauthn/login/get_credential_request_options")
     public ResponseEntity<Map<String, Object>> getCredentialRequestOptions(
-            @RequestParam String username,
+            @RequestParam(required = false) String username,
             HttpSession session) {
 
-        if (!isValidUsername(username)) {
-            log.warn("Invalid username format: {}", username);
-            return ResponseEntity.badRequest().body(error("Invalid username"));
-        }
-
-        StoredUser user = userStore.getUser(username);
-        if (user == null) {
-            log.warn("Login attempt for unknown user: {}", username);
-            return ResponseEntity.badRequest().body(error("User not found"));
+        List<Map<String, Object>> allowCredentials;
+        if (username != null && !username.isBlank()) {
+            if (!isValidUsername(username)) {
+                log.warn("Invalid username format: {}", username);
+                return ResponseEntity.badRequest().body(error("Invalid username"));
+            }
+            StoredUser user = userStore.getUser(username);
+            if (user == null) {
+                log.warn("Login attempt for unknown user: {}", username);
+                return ResponseEntity.badRequest().body(error("User not found"));
+            }
+            allowCredentials = webAuthnService.buildCredentialDescriptors(user);
+        } else {
+            // Usernameless: empty list tells the authenticator to offer any stored passkey for this RP
+            allowCredentials = List.of();
         }
 
         Challenge challenge = webAuthnService.generateChallenge();
         session.setAttribute(SESSION_KEY_AUTH_CHALLENGE,
                 Base64.getEncoder().encodeToString(challenge.getValue()));
-
-        List<Map<String, Object>> allowCredentials = webAuthnService.buildCredentialDescriptors(user);
 
         Map<String, Object> publicKey = new LinkedHashMap<>();
         publicKey.put("challenge",
@@ -195,28 +201,24 @@ public class WebAuthnController {
     /**
      * POST /webauthn/login/process_login_assertion
      * Step 2 of login: verifies the credential assertion.
+     * If {@code username} is omitted, the user is looked up by credential ID
+     * (usernameless/discoverable-credential flow).
      */
     @PostMapping("/webauthn/login/process_login_assertion")
     public ResponseEntity<Map<String, Object>> processLoginAssertion(
-            @RequestParam String username,
+            @RequestParam(required = false) String username,
             @RequestBody String authenticationResponseJson,
             HttpSession session,
             HttpServletRequest request,
             HttpServletResponse response) {
 
-        if (!isValidUsername(username)) {
+        if (username != null && !username.isBlank() && !isValidUsername(username)) {
             return ResponseEntity.badRequest().body(error("Invalid username"));
-        }
-
-        StoredUser user = userStore.getUser(username);
-        if (user == null) {
-            log.warn("Login assertion for unknown user: {}", username);
-            return ResponseEntity.badRequest().body(error("User not found"));
         }
 
         String challengeB64 = (String) session.getAttribute(SESSION_KEY_AUTH_CHALLENGE);
         if (challengeB64 == null) {
-            log.warn("No authentication challenge in session for user: {}", username);
+            log.warn("No authentication challenge in session");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error("No challenge in session"));
         }
         session.removeAttribute(SESSION_KEY_AUTH_CHALLENGE);
@@ -224,18 +226,36 @@ public class WebAuthnController {
         Challenge challenge = new DefaultChallenge(Base64.getDecoder().decode(challengeB64));
         String origin = RequestUtil.getOrigin(request);
 
-        // Find the credential being used
+        // Parse the assertion to get the credential ID
         AuthenticationData authData;
         try {
-            // Parse first to get the credential ID, then look up the stored credential
             authData = com.webauthn4j.WebAuthnManager.createNonStrictWebAuthnManager()
                     .parseAuthenticationResponseJSON(authenticationResponseJson);
         } catch (Exception e) {
-            log.error("Failed to parse authentication response for user {}: {}", username, e.getMessage());
+            log.error("Failed to parse authentication response: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error("Unable to login"));
         }
 
         byte[] credentialId = authData.getCredentialId();
+
+        // Resolve the user: by supplied username or by credential ID (usernameless)
+        StoredUser user;
+        if (username != null && !username.isBlank()) {
+            user = userStore.getUser(username);
+            if (user == null) {
+                log.warn("Login assertion for unknown user: {}", username);
+                return ResponseEntity.badRequest().body(error("User not found"));
+            }
+        } else {
+            user = userStore.findUserByCredentialId(credentialId);
+            if (user == null) {
+                log.warn("Usernameless login: no user found for credential id {}",
+                        Base64.getUrlEncoder().withoutPadding().encodeToString(credentialId));
+                return ResponseEntity.badRequest().body(error("Credential not registered"));
+            }
+            username = user.getName();
+        }
+
         StoredCredential storedCredential = user.findCredential(credentialId);
         if (storedCredential == null) {
             log.warn("Credential not found for user {} with id {}",
@@ -409,27 +429,15 @@ public class WebAuthnController {
         StoredCredential storedCredential = webAuthnService.toStoredCredential(registrationData);
         user.addCredential(storedCredential);
 
-        if (settings.isTestMode()) {
-            userStore.activateRegistration(username);
-            log.info("Test mode: auto-activated user {}", username);
-        }
-
-        String marshaledUser;
         try {
-            marshaledUser = userStore.marshalUser(user);
+            userStore.persistUser(username, user);
         } catch (Exception e) {
-            log.error("Failed to marshal user {}: {}", username, e.getMessage());
+            log.error("Failed to persist user {}: {}", username, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(error("Error during registration"));
+                    .body(error("Error saving registration"));
         }
 
-        String credEntry = "%s: '%s'".formatted(username, marshaledUser);
-        log.info("New registration for user {}: {}", username, credEntry);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("message", "Registration Successful. Share the credential below with your administrator.");
-        result.put("data", credEntry);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(Map.of("message", "Registration Successful"));
     }
 
     // =========================================================================

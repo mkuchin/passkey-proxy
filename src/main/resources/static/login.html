@@ -59,8 +59,8 @@
 <body>
 <div class="card">
   <h1>🔑 Sign in</h1>
-  <label for="username">Username</label>
-  <input type="text" id="username" autocomplete="username webauthn" placeholder="alice" autofocus>
+  <label for="username">Username <span style="color:#999;font-weight:normal">(optional)</span></label>
+  <input type="text" id="username" autocomplete="username webauthn" placeholder="Leave blank to pick a passkey automatically" autofocus>
   <button id="loginBtn" onclick="login()">Sign in with passkey</button>
   <div id="msg" class="msg"></div>
   <div class="links">
@@ -105,16 +105,17 @@
 
   async function login() {
     const username = document.getElementById('username').value.trim();
-    if (!username) { showError('Enter your username'); return; }
 
     const btn = document.getElementById('loginBtn');
     btn.disabled = true;
     btn.textContent = 'Waiting for passkey…';
 
     try {
-      // Step 1 – get assertion options from server
-      const optRes = await fetch(
-        '/webauthn/login/get_credential_request_options?username=' + encodeURIComponent(username));
+      // Step 1 – get assertion options from server (username optional for usernameless flow)
+      const optUrl = username
+        ? '/webauthn/login/get_credential_request_options?username=' + encodeURIComponent(username)
+        : '/webauthn/login/get_credential_request_options';
+      const optRes = await fetch(optUrl);
       const optData = await optRes.json();
       if (!optRes.ok) { showError(optData.message || 'Login failed'); return; }
 
@@ -129,7 +130,7 @@
       // Step 2 – get assertion from browser
       const assertion = await navigator.credentials.get({ publicKey: options });
 
-      // Step 3 – send assertion to server
+      // Step 3 – send assertion to server (username optional)
       const payload = {
         id:    assertion.id,
         rawId: b64url(assertion.rawId),
@@ -143,8 +144,10 @@
         type: assertion.type,
       };
 
-      const loginRes = await fetch(
-        '/webauthn/login/process_login_assertion?username=' + encodeURIComponent(username), {
+      const assertUrl = username
+        ? '/webauthn/login/process_login_assertion?username=' + encodeURIComponent(username)
+        : '/webauthn/login/process_login_assertion';
+      const loginRes = await fetch(assertUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

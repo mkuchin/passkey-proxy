@@ -73,7 +73,7 @@
 <div class="card">
   <h1>📱 Register passkey</h1>
   <p class="subtitle">
-    Create a new passkey and share the credential with your administrator to activate your account.
+    Create a new passkey to access your account. You can sign in immediately after registering.
   </p>
   <label for="username">Username</label>
   <input type="text" id="username" autocomplete="username" placeholder="alice" autofocus>
@@ -172,7 +172,8 @@
       const regData = await regRes.json();
 
       if (regRes.ok) {
-        showSuccess(regData.message, regData.data);
+        showSuccess(regData.message || 'Registration Successful! Redirecting to login…');
+        setTimeout(() => window.location.href = '/webauthn/login', 1500);
       } else {
         showError(regData.message || 'Registration failed');
       }
