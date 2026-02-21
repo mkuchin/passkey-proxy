@@ -1,5 +1,10 @@
 ## [webauthn_proxy](https://github.com/Quiq/webauthn_proxy) in Java
 
+
+## How to run
+
+    docker run -v ./config:/app/config -p 8080:8080 passkey-proxy  
+
 ```
   
   Project structure                                                                                                                                                                                              
