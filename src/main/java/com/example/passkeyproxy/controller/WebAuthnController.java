@@ -441,6 +441,23 @@ public class WebAuthnController {
     }
 
     // =========================================================================
+    // Current user
+    // =========================================================================
+
+    /**
+     * GET /webauthn/me — returns the authenticated user's username, or 401.
+     */
+    @GetMapping("/webauthn/me")
+    public ResponseEntity<Map<String, Object>> handleMe(HttpSession session) {
+        Boolean authenticated = (Boolean) session.getAttribute(SESSION_KEY_AUTHENTICATED);
+        if (!Boolean.TRUE.equals(authenticated)) {
+            return unauthorized("Unauthenticated");
+        }
+        String username = (String) session.getAttribute(SESSION_KEY_USER);
+        return ResponseEntity.ok(Map.of("username", username));
+    }
+
+    // =========================================================================
     // Logout
     // =========================================================================
 

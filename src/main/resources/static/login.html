@@ -23,18 +23,6 @@
     max-width: 380px;
   }
   h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #111; }
-  label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 0.25rem; }
-  input[type=text] {
-    width: 100%;
-    padding: 0.6rem 0.8rem;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 1rem;
-    margin-bottom: 1rem;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  input[type=text]:focus { border-color: #4f46e5; }
   button {
     width: 100%;
     padding: 0.75rem;
@@ -59,8 +47,6 @@
 <body>
 <div class="card">
   <h1>🔑 Sign in</h1>
-  <label for="username">Username <span style="color:#999;font-weight:normal">(optional)</span></label>
-  <input type="text" id="username" autocomplete="username webauthn" placeholder="Leave blank to pick a passkey automatically" autofocus>
   <button id="loginBtn" onclick="login()">Sign in with passkey</button>
   <div id="msg" class="msg"></div>
   <div class="links">
@@ -89,33 +75,14 @@
     el.textContent = msg;
   }
 
-  // Pre-fill username from cookie
-  (function() {
-    const name = document.cookie.split('; ').find(r => r.startsWith('webauthn-proxy-username='));
-    if (name) document.getElementById('username').value = name.split('=')[1];
-    // Also check query param
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('username')) document.getElementById('username').value = params.get('username');
-  })();
-
-  // Submit on Enter
-  document.getElementById('username').addEventListener('keydown', e => {
-    if (e.key === 'Enter') login();
-  });
-
   async function login() {
-    const username = document.getElementById('username').value.trim();
-
     const btn = document.getElementById('loginBtn');
     btn.disabled = true;
     btn.textContent = 'Waiting for passkey…';
 
     try {
-      // Step 1 – get assertion options from server (username optional for usernameless flow)
-      const optUrl = username
-        ? '/webauthn/login/get_credential_request_options?username=' + encodeURIComponent(username)
-        : '/webauthn/login/get_credential_request_options';
-      const optRes = await fetch(optUrl);
+      // Step 1 – get assertion options (usernameless)
+      const optRes = await fetch('/webauthn/login/get_credential_request_options');
       const optData = await optRes.json();
       if (!optRes.ok) { showError(optData.message || 'Login failed'); return; }
 
@@ -130,7 +97,7 @@
       // Step 2 – get assertion from browser
       const assertion = await navigator.credentials.get({ publicKey: options });
 
-      // Step 3 – send assertion to server (username optional)
+      // Step 3 – send assertion to server
       const payload = {
         id:    assertion.id,
         rawId: b64url(assertion.rawId),
@@ -144,10 +111,7 @@
         type: assertion.type,
       };
 
-      const assertUrl = username
-        ? '/webauthn/login/process_login_assertion?username=' + encodeURIComponent(username)
-        : '/webauthn/login/process_login_assertion';
-      const loginRes = await fetch(assertUrl, {
+      const loginRes = await fetch('/webauthn/login/process_login_assertion', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
