@@ -207,6 +207,7 @@ public class WebAuthnController {
     @PostMapping("/webauthn/login/process_login_assertion")
     public ResponseEntity<Map<String, Object>> processLoginAssertion(
             @RequestParam(required = false) String username,
+            @RequestParam(required = false) String redirect_url,
             @RequestBody String authenticationResponseJson,
             HttpSession session,
             HttpServletRequest request,
@@ -307,7 +308,9 @@ public class WebAuthnController {
         response.addCookie(userCookie);
 
         log.info("User {} authenticated successfully from {}", username, clientIp);
-        return ResponseEntity.ok(error("Authentication Successful"));
+        String redirect = (redirect_url != null && !redirect_url.isBlank())
+                ? redirect_url : settings.getPostLoginRedirectPath();
+        return ResponseEntity.ok(Map.of("message", "Authentication Successful", "redirect", redirect));
     }
 
     // =========================================================================

@@ -111,7 +111,11 @@
         type: assertion.type,
       };
 
-      const loginRes = await fetch('/webauthn/login/process_login_assertion', {
+      const params = new URLSearchParams(window.location.search);
+      const redirectUrl = params.get('redirect_url');
+      const assertionUrl = '/webauthn/login/process_login_assertion'
+          + (redirectUrl ? '?redirect_url=' + encodeURIComponent(redirectUrl) : '');
+      const loginRes = await fetch(assertionUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -120,9 +124,7 @@
 
       if (loginRes.ok) {
         showSuccess('Authenticated! Redirecting…');
-        const params = new URLSearchParams(window.location.search);
-        const dest = params.get('redirect_url') || '/webauthn/static/authenticated.html';
-        setTimeout(() => window.location.href = dest, 500);
+        setTimeout(() => window.location.href = loginData.redirect, 500);
       } else {
         showError(loginData.message || 'Login failed');
       }

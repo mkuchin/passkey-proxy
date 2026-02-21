@@ -32,6 +32,10 @@ cookieSecure: false
 # Set to your apex domain to share session across subdomains, e.g. ".example.com"
 cookieDomain: ""
 
+# Path to redirect authenticated users to after login (when no redirect_url param is present).
+# Defaults to the built-in authenticated page. Set to e.g. "/" to send users to your app directly.
+postLoginRedirectPath: "/webauthn/static/authenticated.html"
+
 # Optional CIDR network groups for the /webauthn/verify 2FA endpoint.
 # Allows matching IPs that belong to the same network even if not identical.
 # cidrNetworks:
