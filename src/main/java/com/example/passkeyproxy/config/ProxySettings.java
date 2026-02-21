@@ -28,6 +28,12 @@ public class ProxySettings {
     private boolean cookieSecure = false;
     private String cookieDomain = "";
 
+    /**
+     * Path to redirect authenticated users to after login (when no redirect_url param is present).
+     * Defaults to the built-in authenticated page.
+     */
+    private String postLoginRedirectPath = "/webauthn/static/authenticated.html";
+
     /** Optional CIDR networks for the /webauthn/verify 2FA endpoint. */
     private Map<String, List<String>> cidrNetworks = new HashMap<>();
 
@@ -65,6 +71,9 @@ public class ProxySettings {
 
     public String getCookieDomain() { return cookieDomain; }
     public void setCookieDomain(String v) { this.cookieDomain = v; }
+
+    public String getPostLoginRedirectPath() { return postLoginRedirectPath; }
+    public void setPostLoginRedirectPath(String v) { this.postLoginRedirectPath = v; }
 
     public Map<String, List<String>> getCidrNetworks() { return cidrNetworks; }
     public void setCidrNetworks(Map<String, List<String>> v) { this.cidrNetworks = v; }

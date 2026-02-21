@@ -143,7 +143,7 @@ public class WebAuthnController {
         if (Boolean.TRUE.equals(authenticated)) {
             String dest = (redirect_url != null && !redirect_url.isBlank())
                     ? redirect_url
-                    : "/webauthn/static/authenticated.html";
+                    : settings.getPostLoginRedirectPath();
             return ResponseEntity.status(HttpStatus.TEMPORARY_REDIRECT)
                     .header("Location", dest)
                     .build();
